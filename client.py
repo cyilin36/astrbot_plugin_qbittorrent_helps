@@ -154,7 +154,7 @@ class QBittorrentClient:
         _, payload = await self.request(
             "GET",
             "torrents/info",
-            params={"limit": "0", "sort": "name"},
+            params={"limit": "0", "sort": "added_on", "reverse": "true"},
         )
         if not isinstance(payload, list):
             raise QBittorrentError("qBittorrent 返回的条目列表格式无效")
