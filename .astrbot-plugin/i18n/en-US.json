@@ -2,7 +2,7 @@
   "metadata": {
     "display_name": "AstrBot qBittorrent Manager",
     "short_desc": "Manage qBittorrent downloads through AstrBot commands and one AI tool.",
-    "desc": "Connects to the qBittorrent Web API for searching, magnet previews, selective downloads, and safe deletion."
+    "desc": "Connects to the qBittorrent Web API for searching, magnet previews, selective downloads, task renaming, and safe deletion."
   },
   "config": {
     "base_url": {

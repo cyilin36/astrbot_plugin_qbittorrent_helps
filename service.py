@@ -274,6 +274,14 @@ class QBittorrentService:
         await self.client.delete_torrent(torrent_hash, self.delete_files)
         return torrent_hash, name
 
+    async def rename(self, hash_or_prefix: str, new_name: str) -> tuple[str, str, str]:
+        normalized_name = str(new_name).strip()
+        if not normalized_name:
+            raise QBittorrentError("新任务名称不能为空")
+        torrent_hash, old_name = await self.resolve_hash(hash_or_prefix)
+        await self.client.rename_torrent(torrent_hash, normalized_name)
+        return torrent_hash, old_name, normalized_name
+
     async def close(self) -> None:
         self._previews.clear()
         await self.client.close()

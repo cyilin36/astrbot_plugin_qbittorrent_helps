@@ -2,7 +2,7 @@
   "metadata": {
     "display_name": "AstrBot qBittorrent 管理",
     "short_desc": "通过 AstrBot 指令和 AI tool 管理 qBittorrent 下载任务。",
-    "desc": "连接 qBittorrent Web API，支持搜索、磁力链预览、选择文件下载和安全删除。"
+    "desc": "连接 qBittorrent Web API，支持搜索、磁力链预览、选择文件下载、重命名和安全删除。"
   },
   "config": {
     "base_url": {

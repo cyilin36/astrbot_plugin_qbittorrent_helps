@@ -208,6 +208,14 @@ class QBittorrentClient:
             },
         )
 
+    async def rename_torrent(self, torrent_hash: str, name: str) -> None:
+        await self.prepare()
+        await self.request(
+            "POST",
+            "torrents/rename",
+            data={"hash": torrent_hash, "name": name},
+        )
+
     async def close(self) -> None:
         if (
             self._session is not None

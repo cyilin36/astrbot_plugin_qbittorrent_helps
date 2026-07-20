@@ -30,6 +30,7 @@
 /qbt preview <磁力链>
 /qbt add <磁力链或预览令牌> [文件选择]
 /qbt delete <hash 或唯一 hash 前缀> [确认]
+/qbt rename <hash 或唯一 hash 前缀> <新任务名称>
 ```
 
 例如：
@@ -42,9 +43,15 @@
 
 删除时默认保留文件。若开启 `delete_files`，指令必须追加文字 `确认`；AI tool 必须传入 `confirm=true`。
 
+重命名只修改 qBittorrent 列表中的任务显示名称，不会修改下载文件。新名称可以包含空格，例如：
+
+```text
+/qbt rename abcd1234 我的新任务名称
+```
+
 ## AI tool
 
-AI 使用统一的 `qbittorrent` tool，通过 `action` 选择：`search`、`preview`、`add` 或 `delete`。预览后，模型应使用返回的 `preview_token` 和 1-based `file_indexes` 调用 `add`。
+AI 使用统一的 `qbittorrent` tool，通过 `action` 选择：`search`、`preview`、`add`、`delete` 或 `rename`。预览后，模型应使用返回的 `preview_token` 和 1-based `file_indexes` 调用 `add`；重命名时提供 `torrent_hash` 和 `new_name`。
 
 ## 排错
 

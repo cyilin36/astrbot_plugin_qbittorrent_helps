@@ -43,7 +43,7 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
     service: Any = Field(default=None, exclude=True)
     name: str = "qbittorrent"
     description: str = (
-        "管理 qBittorrent：搜索现有条目、预览磁力链文件、添加下载或删除条目。"
+        "管理 qBittorrent：搜索现有条目、预览磁力链文件、添加下载、重命名或删除条目。"
         "预览后用 preview_token 和 1-based file_indexes 选择文件。"
     )
     parameters: dict = Field(
@@ -52,7 +52,7 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["search", "preview", "add", "delete"],
+                    "enum": ["search", "preview", "add", "delete", "rename"],
                     "description": "要执行的操作。",
                 },
                 "query": {"type": "string", "description": "搜索关键词。"},
@@ -63,7 +63,11 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                 },
                 "torrent_hash": {
                     "type": "string",
-                    "description": "删除目标的完整 hash 或唯一 hash 前缀。",
+                    "description": "删除或重命名目标的完整 hash 或唯一 hash 前缀。",
+                },
+                "new_name": {
+                    "type": "string",
+                    "description": "rename 操作要设置的新任务显示名称。",
                 },
                 "file_indexes": {
                     "type": "array",
@@ -137,7 +141,29 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                     ensure_ascii=False,
                 )
 
-            raise QBittorrentError("action 必须是 search、preview、add 或 delete")
+            if action == "rename":
+                torrent_hash = str(kwargs.get("torrent_hash", "")).strip()
+                new_name = str(kwargs.get("new_name", "")).strip()
+                if not torrent_hash:
+                    raise QBittorrentError("rename 操作必须提供 torrent_hash")
+                if not new_name:
+                    raise QBittorrentError("rename 操作必须提供 new_name")
+                resolved_hash, old_name, normalized_name = await self.service.rename(
+                    torrent_hash, new_name
+                )
+                return json.dumps(
+                    {
+                        "success": True,
+                        "old_name": old_name,
+                        "new_name": normalized_name,
+                        "torrent_hash": resolved_hash,
+                    },
+                    ensure_ascii=False,
+                )
+
+            raise QBittorrentError(
+                "action 必须是 search、preview、add、delete 或 rename"
+            )
         except QBittorrentError as exc:
             return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
         except Exception:

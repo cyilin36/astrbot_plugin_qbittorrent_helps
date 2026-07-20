@@ -7,6 +7,7 @@ from typing import Any
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
+from astrbot.core.star.filter.command import GreedyStr
 
 try:
     from .client import QBittorrentClient, QBittorrentError
@@ -119,6 +120,22 @@ class QBittorrentPlugin(Star):
             )
         except Exception as exc:
             yield await self._command_error(event, "delete", exc)
+
+    @qbt.command("rename")
+    async def qbt_rename(
+        self, event: AstrMessageEvent, torrent_hash: str, new_name: GreedyStr
+    ):
+        """修改 qBittorrent 任务显示名称。"""
+        try:
+            self._identity(event)
+            resolved_hash, old_name, normalized_name = await self.service.rename(
+                torrent_hash, new_name
+            )
+            yield event.plain_result(
+                f"已重命名任务：{old_name} → {normalized_name}\nHash: {resolved_hash}"
+            )
+        except Exception as exc:
+            yield await self._command_error(event, "rename", exc)
 
     async def terminate(self):
         await self.service.close()
