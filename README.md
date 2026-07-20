@@ -1,0 +1,53 @@
+# AstrBot qBittorrent 管理
+
+通过 AstrBot 管理 qBittorrent 下载任务。插件提供 `/qbt` 指令组和一个名为 `qbittorrent` 的 AI tool。
+
+## 前置条件
+
+- qBittorrent 已启用 WebUI，并允许 AstrBot 所在机器访问。
+- qBittorrent Web API 至少为 `2.11.9`。磁力链文件预览依赖 `torrents/fetchMetadata`。
+- AstrBot 至少为 `4.5.7`。
+- 插件 WebUI 配置中必须填写 `authorized_uids`。使用 AstrBot `/sid` 获取 UID；空列表默认拒绝所有操作。
+
+## 配置
+
+在 AstrBot WebUI 的插件配置中设置：
+
+- `base_url`：例如 `http://127.0.0.1:8080`。反向代理部署时填写完整子路径，例如 `https://example.com/qbt`。
+- `username` 和 `password`：qBittorrent WebUI 账号。
+- `delete_files`：是否删除条目对应的已下载文件，默认关闭。
+- `default_search_limit`：未指定数量时的搜索结果数，默认 10。
+- `authorized_uids`：允许操作的 AstrBot UID 列表。
+
+插件不会把密码写入消息或日志。
+
+## 指令
+
+```text
+/qbt search [关键词] [数量]
+/qbt preview <磁力链>
+/qbt add <磁力链或预览令牌> [文件选择]
+/qbt delete <hash 或唯一 hash 前缀> [确认]
+```
+
+例如：
+
+1. `/qbt preview magnet:?xt=...`
+2. 根据返回的种子名称和文件清单选择文件。
+3. `/qbt add AbCdEf12 1,3-5`
+
+文件编号从 1 开始，支持逗号和范围。直接执行 `/qbt add magnet:?xt=...` 会添加全部文件。预览令牌默认 15 分钟有效，并绑定创建它的 UID 和会话。
+
+删除时默认保留文件。若开启 `delete_files`，指令必须追加文字 `确认`；AI tool 必须传入 `confirm=true`。
+
+## AI tool
+
+AI 使用统一的 `qbittorrent` tool，通过 `action` 选择：`search`、`preview`、`add` 或 `delete`。预览后，模型应使用返回的 `preview_token` 和 1-based `file_indexes` 调用 `add`。
+
+## 排错
+
+- `401/403`：检查用户名、密码和 qBittorrent WebUI 的认证设置。
+- `404`：检查 `base_url` 是否包含正确的反向代理路径，且没有重复 `/api/v2`。
+- API 版本过低：升级 qBittorrent 到支持 Web API `2.11.9` 或更高版本。
+- 元数据超时：磁力链需要等待 DHT/Tracker 获取元数据，稍后重新执行 `preview`。
+- 未授权：确认 `/sid` 输出的 UID 已作为字符串加入 `authorized_uids`，保存配置后重载插件。

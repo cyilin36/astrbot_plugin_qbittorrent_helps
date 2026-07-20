@@ -1,0 +1,7 @@
+test/
+qbittorrent/
+astrbot-docs/
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/

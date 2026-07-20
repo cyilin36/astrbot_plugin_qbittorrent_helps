@@ -1,0 +1,40 @@
+{
+  "base_url": {
+    "description": "qBittorrent WebUI 地址",
+    "type": "string",
+    "default": "http://127.0.0.1:8080",
+    "hint": "例如 http://127.0.0.1:8080；如果使用反向代理，请填写包含子路径的地址。",
+    "obvious_hint": true
+  },
+  "username": {
+    "description": "qBittorrent 用户名",
+    "type": "string",
+    "default": "admin"
+  },
+  "password": {
+    "description": "qBittorrent 密码",
+    "type": "string",
+    "default": "",
+    "hint": "密码只用于登录 qBittorrent，不会写入消息或日志。",
+    "obvious_hint": true
+  },
+  "delete_files": {
+    "description": "删除条目时同时删除已下载文件",
+    "type": "bool",
+    "default": false,
+    "hint": "默认关闭。开启后，删除操作必须额外确认。"
+  },
+  "default_search_limit": {
+    "description": "默认条目搜索数量",
+    "type": "int",
+    "default": 10,
+    "hint": "建议设置为 1 到 100。"
+  },
+  "authorized_uids": {
+    "description": "允许使用本插件的 AstrBot UID",
+    "type": "list",
+    "default": [],
+    "hint": "使用 /sid 获取 UID 并填入。为空时拒绝所有 qBittorrent 操作。",
+    "obvious_hint": true
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "metadata": {
+    "display_name": "AstrBot qBittorrent Manager",
+    "short_desc": "Manage qBittorrent downloads through AstrBot commands and one AI tool.",
+    "desc": "Connects to the qBittorrent Web API for searching, magnet previews, selective downloads, and safe deletion."
+  },
+  "config": {
+    "base_url": {
+      "description": "qBittorrent WebUI URL",
+      "hint": "For example, http://127.0.0.1:8080. Include a reverse-proxy subpath when applicable."
+    },
+    "username": {"description": "qBittorrent username"},
+    "password": {
+      "description": "qBittorrent password",
+      "hint": "Used only to authenticate with qBittorrent and never written to messages or logs."
+    },
+    "delete_files": {
+      "description": "Delete downloaded files when removing a torrent",
+      "hint": "Disabled by default. Deletion requires explicit confirmation when enabled."
+    },
+    "default_search_limit": {
+      "description": "Default number of search results",
+      "hint": "Recommended range: 1 to 100."
+    },
+    "authorized_uids": {
+      "description": "AstrBot UIDs allowed to use this plugin",
+      "hint": "Get a UID with /sid. An empty list denies all qBittorrent operations."
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "metadata": {
+    "display_name": "AstrBot qBittorrent 管理",
+    "short_desc": "通过 AstrBot 指令和 AI tool 管理 qBittorrent 下载任务。",
+    "desc": "连接 qBittorrent Web API，支持搜索、磁力链预览、选择文件下载和安全删除。"
+  },
+  "config": {
+    "base_url": {
+      "description": "qBittorrent WebUI 地址",
+      "hint": "例如 http://127.0.0.1:8080；如果使用反向代理，请填写包含子路径的地址。"
+    },
+    "username": {"description": "qBittorrent 用户名"},
+    "password": {
+      "description": "qBittorrent 密码",
+      "hint": "密码只用于登录 qBittorrent，不会写入消息或日志。"
+    },
+    "delete_files": {
+      "description": "删除条目时同时删除已下载文件",
+      "hint": "默认关闭。开启后，删除操作必须额外确认。"
+    },
+    "default_search_limit": {
+      "description": "默认条目搜索数量",
+      "hint": "建议设置为 1 到 100。"
+    },
+    "authorized_uids": {
+      "description": "允许使用本插件的 AstrBot UID",
+      "hint": "使用 /sid 获取 UID 并填入。为空时拒绝所有 qBittorrent 操作。"
+    }
+  }
+}
