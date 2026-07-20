@@ -43,7 +43,7 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
     service: Any = Field(default=None, exclude=True)
     name: str = "qbittorrent"
     description: str = (
-        "管理 qBittorrent：搜索现有条目、预览磁力链文件、添加下载、重命名或删除条目。"
+        "管理 qBittorrent：搜索、预览、添加、重命名、分类、标签或删除下载条目。"
         "预览后用 preview_token 和 1-based file_indexes 选择文件。"
     )
     parameters: dict = Field(
@@ -52,7 +52,15 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["search", "preview", "add", "delete", "rename"],
+                    "enum": [
+                        "search",
+                        "preview",
+                        "add",
+                        "delete",
+                        "rename",
+                        "set_category",
+                        "set_tags",
+                    ],
                     "description": "要执行的操作。",
                 },
                 "query": {"type": "string", "description": "搜索关键词。"},
@@ -68,6 +76,15 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                 "new_name": {
                     "type": "string",
                     "description": "rename 操作要设置的新任务显示名称。",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "set_category 操作要设置的已有分类；空字符串表示清除分类。",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "set_tags 操作要设置的完整标签集合；空数组表示清空标签。",
                 },
                 "file_indexes": {
                     "type": "array",
@@ -161,8 +178,46 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                     ensure_ascii=False,
                 )
 
+            if action == "set_category":
+                torrent_hash = str(kwargs.get("torrent_hash", "")).strip()
+                if not torrent_hash:
+                    raise QBittorrentError("set_category 操作必须提供 torrent_hash")
+                if "category" not in kwargs:
+                    raise QBittorrentError("set_category 操作必须提供 category")
+                resolved_hash, torrent_name, category = await self.service.set_category(
+                    torrent_hash, str(kwargs.get("category", ""))
+                )
+                return json.dumps(
+                    {
+                        "success": True,
+                        "name": torrent_name,
+                        "category": category,
+                        "torrent_hash": resolved_hash,
+                    },
+                    ensure_ascii=False,
+                )
+
+            if action == "set_tags":
+                torrent_hash = str(kwargs.get("torrent_hash", "")).strip()
+                if not torrent_hash:
+                    raise QBittorrentError("set_tags 操作必须提供 torrent_hash")
+                if "tags" not in kwargs:
+                    raise QBittorrentError("set_tags 操作必须提供 tags")
+                resolved_hash, torrent_name, tags = await self.service.set_tags(
+                    torrent_hash, kwargs.get("tags", [])
+                )
+                return json.dumps(
+                    {
+                        "success": True,
+                        "name": torrent_name,
+                        "tags": tags,
+                        "torrent_hash": resolved_hash,
+                    },
+                    ensure_ascii=False,
+                )
+
             raise QBittorrentError(
-                "action 必须是 search、preview、add、delete 或 rename"
+                "action 必须是 search、preview、add、delete、rename、set_category 或 set_tags"
             )
         except QBittorrentError as exc:
             return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)

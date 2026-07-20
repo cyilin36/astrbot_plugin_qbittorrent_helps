@@ -137,5 +137,41 @@ class QBittorrentPlugin(Star):
         except Exception as exc:
             yield await self._command_error(event, "rename", exc)
 
+    @qbt.command("category")
+    async def qbt_category(
+        self, event: AstrMessageEvent, torrent_hash: str, category: GreedyStr
+    ):
+        """设置或清空 qBittorrent 任务分类。"""
+        try:
+            self._identity(event)
+            (
+                resolved_hash,
+                torrent_name,
+                normalized_category,
+            ) = await self.service.set_category(torrent_hash, category)
+            display_category = normalized_category or "未分类"
+            yield event.plain_result(
+                f"已设置任务分类：{torrent_name} → {display_category}\nHash: {resolved_hash}"
+            )
+        except Exception as exc:
+            yield await self._command_error(event, "category", exc)
+
+    @qbt.command("tags")
+    async def qbt_tags(
+        self, event: AstrMessageEvent, torrent_hash: str, tags: GreedyStr
+    ):
+        """整体替换或清空 qBittorrent 任务标签。"""
+        try:
+            self._identity(event)
+            resolved_hash, torrent_name, normalized_tags = await self.service.set_tags(
+                torrent_hash, tags
+            )
+            display_tags = "、".join(normalized_tags) or "无"
+            yield event.plain_result(
+                f"已设置任务标签：{torrent_name} → {display_tags}\nHash: {resolved_hash}"
+            )
+        except Exception as exc:
+            yield await self._command_error(event, "tags", exc)
+
     async def terminate(self):
         await self.service.close()

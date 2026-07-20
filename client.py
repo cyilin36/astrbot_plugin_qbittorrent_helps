@@ -216,6 +216,29 @@ class QBittorrentClient:
             data={"hash": torrent_hash, "name": name},
         )
 
+    async def list_categories(self) -> list[str]:
+        await self.prepare()
+        _, payload = await self.request("GET", "torrents/categories")
+        if not isinstance(payload, dict):
+            raise QBittorrentError("qBittorrent 返回的分类列表格式无效")
+        return list(payload)
+
+    async def set_category(self, torrent_hash: str, category: str) -> None:
+        await self.prepare()
+        await self.request(
+            "POST",
+            "torrents/setCategory",
+            data={"hashes": torrent_hash, "category": category},
+        )
+
+    async def set_tags(self, torrent_hash: str, tags: list[str]) -> None:
+        await self.prepare()
+        await self.request(
+            "POST",
+            "torrents/setTags",
+            data={"hashes": torrent_hash, "tags": ",".join(tags)},
+        )
+
     async def close(self) -> None:
         if (
             self._session is not None

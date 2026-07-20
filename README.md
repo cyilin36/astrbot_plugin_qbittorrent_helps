@@ -31,6 +31,8 @@
 /qbt add <磁力链或预览令牌> [文件选择]
 /qbt delete <hash 或唯一 hash 前缀> [确认]
 /qbt rename <hash 或唯一 hash 前缀> <新任务名称>
+/qbt category <hash 或唯一 hash 前缀> <已有分类名|清空>
+/qbt tags <hash 或唯一 hash 前缀> <标签1,标签2|清空>
 ```
 
 例如：
@@ -49,9 +51,13 @@
 /qbt rename abcd1234 我的新任务名称
 ```
 
+分类只能设置为 qBittorrent 中已经存在的分类；使用 `清空` 可恢复为未分类。任务开启自动管理时，修改分类可能根据 qBittorrent 配置移动下载目录。
+
+标签采用整体替换方式。例如 `/qbt tags abcd1234 电影,已整理` 会把任务标签设置为这两个标签；使用 `清空` 删除全部标签。搜索结果会直接显示每个任务当前的分类和标签。
+
 ## AI tool
 
-AI 使用统一的 `qbittorrent` tool，通过 `action` 选择：`search`、`preview`、`add`、`delete` 或 `rename`。预览后，模型应使用返回的 `preview_token` 和 1-based `file_indexes` 调用 `add`；重命名时提供 `torrent_hash` 和 `new_name`。
+AI 使用统一的 `qbittorrent` tool，通过 `action` 选择：`search`、`preview`、`add`、`delete`、`rename`、`set_category` 或 `set_tags`。预览后，模型应使用返回的 `preview_token` 和 1-based `file_indexes` 调用 `add`；修改分类或标签时提供 `torrent_hash` 以及 `category` 或 `tags`。
 
 ## 排错
 

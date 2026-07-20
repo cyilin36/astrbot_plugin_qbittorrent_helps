@@ -282,6 +282,53 @@ class QBittorrentService:
         await self.client.rename_torrent(torrent_hash, normalized_name)
         return torrent_hash, old_name, normalized_name
 
+    async def set_category(
+        self, hash_or_prefix: str, category: str
+    ) -> tuple[str, str, str]:
+        normalized_category = str(category).strip()
+        if normalized_category == "清空":
+            normalized_category = ""
+
+        torrent_hash, torrent_name = await self.resolve_hash(hash_or_prefix)
+        if normalized_category:
+            categories = await self.client.list_categories()
+            if normalized_category not in categories:
+                available = "、".join(sorted(categories)) or "暂无可用分类"
+                raise QBittorrentError(
+                    f"分类“{normalized_category}”不存在。可用分类: {available}"
+                )
+
+        await self.client.set_category(torrent_hash, normalized_category)
+        return torrent_hash, torrent_name, normalized_category
+
+    @staticmethod
+    def normalize_tags(tags: str | Iterable[Any]) -> list[str]:
+        if isinstance(tags, str):
+            text = tags.strip()
+            if not text or text == "清空":
+                return []
+            raw_tags: Iterable[Any] = text.split(",")
+        else:
+            raw_tags = tags
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw_tag in raw_tags:
+            for part in str(raw_tag).split(","):
+                tag = part.strip()
+                if tag and tag not in seen:
+                    seen.add(tag)
+                    normalized.append(tag)
+        return normalized
+
+    async def set_tags(
+        self, hash_or_prefix: str, tags: str | Iterable[Any]
+    ) -> tuple[str, str, list[str]]:
+        normalized_tags = self.normalize_tags(tags)
+        torrent_hash, torrent_name = await self.resolve_hash(hash_or_prefix)
+        await self.client.set_tags(torrent_hash, normalized_tags)
+        return torrent_hash, torrent_name, normalized_tags
+
     async def close(self) -> None:
         self._previews.clear()
         await self.client.close()
@@ -323,11 +370,14 @@ def format_search_results(torrents: list[dict[str, Any]]) -> str:
     lines = [f"找到 {len(torrents)} 个条目:"]
     for index, torrent in enumerate(torrents, start=1):
         progress = max(0.0, min(1.0, float(torrent.get("progress", 0)))) * 100
+        category = str(torrent.get("category", "")).strip() or "未分类"
+        tags = str(torrent.get("tags", "")).strip() or "无"
         lines.extend(
             (
                 f"{index}. {torrent.get('name', '未命名')}",
                 f"   状态: {torrent.get('state', 'unknown')} | 进度: {progress:.1f}% | "
                 f"下载: {format_size(torrent.get('dlspeed', 0))}/s | 上传: {format_size(torrent.get('upspeed', 0))}/s",
+                f"   分类: {category} | 标签: {tags}",
                 f"   Hash: {torrent.get('hash', '')}",
             )
         )
