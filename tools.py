@@ -43,7 +43,8 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
     service: Any = Field(default=None, exclude=True)
     name: str = "qbittorrent"
     description: str = (
-        "管理 qBittorrent：搜索、预览、添加、重命名、分类、标签或删除下载条目。"
+        "管理 qBittorrent：搜索、预览、添加、重命名、分类、标签、分享率、"
+        "上传限速、启停或删除下载条目。"
         "预览后用 preview_token 和 1-based file_indexes 选择文件。"
     )
     parameters: dict = Field(
@@ -60,6 +61,10 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                         "rename",
                         "set_category",
                         "set_tags",
+                        "set_ratio",
+                        "set_upload_limit",
+                        "start",
+                        "stop",
                     ],
                     "description": "要执行的操作。",
                 },
@@ -71,7 +76,7 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                 },
                 "torrent_hash": {
                     "type": "string",
-                    "description": "删除或重命名目标的完整 hash 或唯一 hash 前缀。",
+                    "description": "任务操作目标的完整 hash 或唯一 hash 前缀。",
                 },
                 "new_name": {
                     "type": "string",
@@ -85,6 +90,16 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "set_tags 操作要设置的完整标签集合；空数组表示清空标签。",
+                },
+                "ratio_limit": {
+                    "type": "number",
+                    "minimum": -2,
+                    "description": "set_ratio 的分享率；-2 使用默认设置，-1 表示无限，其他值必须非负。",
+                },
+                "upload_limit_kib": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "set_upload_limit 的 KiB/s 整数；0 取消任务专属限速并沿用全局设置。",
                 },
                 "file_indexes": {
                     "type": "array",
@@ -216,8 +231,80 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                     ensure_ascii=False,
                 )
 
+            if action == "set_ratio":
+                torrent_hash = str(kwargs.get("torrent_hash", "")).strip()
+                if not torrent_hash:
+                    raise QBittorrentError("set_ratio 操作必须提供 torrent_hash")
+                if "ratio_limit" not in kwargs:
+                    raise QBittorrentError("set_ratio 操作必须提供 ratio_limit")
+                resolved_hash, torrent_name, ratio_limit = await self.service.set_ratio(
+                    torrent_hash, kwargs.get("ratio_limit")
+                )
+                mode = (
+                    "default"
+                    if ratio_limit == -2
+                    else "unlimited"
+                    if ratio_limit == -1
+                    else "custom"
+                )
+                return json.dumps(
+                    {
+                        "success": True,
+                        "name": torrent_name,
+                        "ratio_limit": ratio_limit,
+                        "ratio_limit_mode": mode,
+                        "torrent_hash": resolved_hash,
+                    },
+                    ensure_ascii=False,
+                )
+
+            if action == "set_upload_limit":
+                torrent_hash = str(kwargs.get("torrent_hash", "")).strip()
+                if not torrent_hash:
+                    raise QBittorrentError("set_upload_limit 操作必须提供 torrent_hash")
+                if "upload_limit_kib" not in kwargs:
+                    raise QBittorrentError(
+                        "set_upload_limit 操作必须提供 upload_limit_kib"
+                    )
+                (
+                    resolved_hash,
+                    torrent_name,
+                    limit_kib,
+                ) = await self.service.set_upload_limit(
+                    torrent_hash, kwargs.get("upload_limit_kib")
+                )
+                return json.dumps(
+                    {
+                        "success": True,
+                        "name": torrent_name,
+                        "upload_limit_kib": limit_kib,
+                        "uses_global_limit": limit_kib == 0,
+                        "torrent_hash": resolved_hash,
+                    },
+                    ensure_ascii=False,
+                )
+
+            if action in {"start", "stop"}:
+                torrent_hash = str(kwargs.get("torrent_hash", "")).strip()
+                if not torrent_hash:
+                    raise QBittorrentError(f"{action} 操作必须提供 torrent_hash")
+                operation = (
+                    self.service.start if action == "start" else self.service.stop
+                )
+                resolved_hash, torrent_name = await operation(torrent_hash)
+                return json.dumps(
+                    {
+                        "success": True,
+                        "name": torrent_name,
+                        "state": "started" if action == "start" else "stopped",
+                        "torrent_hash": resolved_hash,
+                    },
+                    ensure_ascii=False,
+                )
+
             raise QBittorrentError(
-                "action 必须是 search、preview、add、delete、rename、set_category 或 set_tags"
+                "action 必须是 search、preview、add、delete、rename、set_category、"
+                "set_tags、set_ratio、set_upload_limit、start 或 stop"
             )
         except QBittorrentError as exc:
             return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)

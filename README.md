@@ -33,6 +33,10 @@
 /qbt rename <hash 或唯一 hash 前缀> <新任务名称>
 /qbt category <hash 或唯一 hash 前缀> <已有分类名|清空>
 /qbt tags <hash 或唯一 hash 前缀> <标签1,标签2|清空>
+/qbt ratio <hash 或唯一 hash 前缀> <分享率|默认|无限>
+/qbt upload <hash 或唯一 hash 前缀> <KiB/s整数|默认|无限>
+/qbt start <hash 或唯一 hash 前缀>
+/qbt stop <hash 或唯一 hash 前缀>
 ```
 
 例如：
@@ -55,9 +59,15 @@
 
 标签采用整体替换方式。例如 `/qbt tags abcd1234 电影,已整理` 会把任务标签设置为这两个标签；使用 `清空` 删除全部标签。搜索结果会直接显示每个任务当前的分类和标签。
 
+分享率和上传限速只在明确执行对应指令时修改，添加、重命名、分类、标签和启停操作不会改变这些设置。分享率支持非负数字；`默认`表示继续使用 qBittorrent 的分类或全局分享率，`无限`表示明确取消分享率限制。达到分享率后的动作仍由 qBittorrent 已有设置决定。
+
+上传限速使用 KiB/s 整数，例如 `/qbt upload abcd1234 512`。使用 `0`、`默认`或`无限`会取消任务专属限速，但任务仍受 qBittorrent 全局上传限速约束。`start` 和 `stop` 可启动或停止单个任务。搜索结果会显示当前分享率、分享率设置和任务上传限速。
+
 ## AI tool
 
-AI 使用统一的 `qbittorrent` tool，通过 `action` 选择：`search`、`preview`、`add`、`delete`、`rename`、`set_category` 或 `set_tags`。预览后，模型应使用返回的 `preview_token` 和 1-based `file_indexes` 调用 `add`；修改分类或标签时提供 `torrent_hash` 以及 `category` 或 `tags`。
+AI 使用统一的 `qbittorrent` tool，通过 `action` 选择：`search`、`preview`、`add`、`delete`、`rename`、`set_category`、`set_tags`、`set_ratio`、`set_upload_limit`、`start` 或 `stop`。预览后，模型应使用返回的 `preview_token` 和 1-based `file_indexes` 调用 `add`。
+
+任务管理操作使用 `torrent_hash`。`set_ratio` 使用 `ratio_limit`，其中 `-2` 表示默认、`-1` 表示无限；`set_upload_limit` 使用非负整数 `upload_limit_kib`，其中 `0` 表示取消任务专属限速并继续使用全局设置。没有明确执行这两个 action 时，tool 不会改变任务的分享率或上传限速。
 
 ## 排错
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import secrets
 import time
@@ -45,6 +46,7 @@ class Preview:
 class QBittorrentService:
     PREVIEW_TTL_SECONDS = 15 * 60
     MAX_SEARCH_LIMIT = 100
+    MAX_UPLOAD_LIMIT_KIB = (2**63 - 1) // 1024
 
     def __init__(
         self,
@@ -242,7 +244,7 @@ class QBittorrentService:
             self._previews.pop(preview.token, None)
         return result
 
-    async def resolve_hash(self, hash_or_prefix: str) -> tuple[str, str]:
+    async def resolve_torrent(self, hash_or_prefix: str) -> dict[str, Any]:
         candidate = hash_or_prefix.strip().casefold()
         if not candidate or not re.fullmatch(r"[0-9a-f]+", candidate):
             raise QBittorrentError("hash 必须是十六进制字符串")
@@ -260,7 +262,10 @@ class QBittorrentService:
                 for item in matches[:5]
             )
             raise QBittorrentError(f"hash 前缀不唯一，请提供更多字符。候选: {options}")
-        torrent = matches[0]
+        return matches[0]
+
+    async def resolve_hash(self, hash_or_prefix: str) -> tuple[str, str]:
+        torrent = await self.resolve_torrent(hash_or_prefix)
         return str(torrent.get("hash", "")), str(torrent.get("name", "未命名"))
 
     async def delete(
@@ -329,6 +334,89 @@ class QBittorrentService:
         await self.client.set_tags(torrent_hash, normalized_tags)
         return torrent_hash, torrent_name, normalized_tags
 
+    @staticmethod
+    def normalize_ratio_limit(value: Any) -> float:
+        if isinstance(value, bool):
+            raise QBittorrentError("分享率必须是非负数字、默认或无限")
+        if isinstance(value, str):
+            normalized = value.strip().casefold()
+            if normalized in {"默认", "default"}:
+                return -2.0
+            if normalized in {"无限", "unlimited"}:
+                return -1.0
+            value = normalized
+        try:
+            ratio_limit = float(value)
+        except (TypeError, ValueError) as exc:
+            raise QBittorrentError("分享率必须是非负数字、默认或无限") from exc
+        if not math.isfinite(ratio_limit) or (
+            ratio_limit < 0 and ratio_limit not in {-2.0, -1.0}
+        ):
+            raise QBittorrentError("分享率必须是非负数字、默认或无限")
+        return ratio_limit
+
+    @classmethod
+    def normalize_upload_limit_kib(cls, value: Any) -> int:
+        if isinstance(value, bool):
+            raise QBittorrentError("上传限速必须是非负 KiB/s 整数、默认或无限")
+        if isinstance(value, str):
+            normalized = value.strip().casefold()
+            if normalized in {"默认", "default", "无限", "unlimited"}:
+                return 0
+            value = normalized
+        try:
+            limit_kib = int(value)
+        except (TypeError, ValueError) as exc:
+            raise QBittorrentError("上传限速必须是非负 KiB/s 整数、默认或无限") from exc
+        if (
+            str(value).strip() != str(limit_kib)
+            or not 0 <= limit_kib <= cls.MAX_UPLOAD_LIMIT_KIB
+        ):
+            raise QBittorrentError("上传限速必须是非负 KiB/s 整数、默认或无限")
+        return limit_kib
+
+    @staticmethod
+    def _int_setting(torrent: dict[str, Any], key: str, default: int) -> int:
+        try:
+            return int(torrent.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    async def set_ratio(
+        self, hash_or_prefix: str, ratio_limit: Any
+    ) -> tuple[str, str, float]:
+        normalized_ratio = self.normalize_ratio_limit(ratio_limit)
+        torrent = await self.resolve_torrent(hash_or_prefix)
+        torrent_hash = str(torrent.get("hash", ""))
+        torrent_name = str(torrent.get("name", "未命名"))
+        await self.client.set_share_limits(
+            torrent_hash,
+            normalized_ratio,
+            self._int_setting(torrent, "seeding_time_limit", -2),
+            self._int_setting(torrent, "inactive_seeding_time_limit", -2),
+            str(torrent.get("share_limit_action") or "Default"),
+            str(torrent.get("share_limits_mode") or "Default"),
+        )
+        return torrent_hash, torrent_name, normalized_ratio
+
+    async def set_upload_limit(
+        self, hash_or_prefix: str, limit_kib: Any
+    ) -> tuple[str, str, int]:
+        normalized_limit = self.normalize_upload_limit_kib(limit_kib)
+        torrent_hash, torrent_name = await self.resolve_hash(hash_or_prefix)
+        await self.client.set_upload_limit(torrent_hash, normalized_limit * 1024)
+        return torrent_hash, torrent_name, normalized_limit
+
+    async def start(self, hash_or_prefix: str) -> tuple[str, str]:
+        torrent_hash, torrent_name = await self.resolve_hash(hash_or_prefix)
+        await self.client.start_torrent(torrent_hash)
+        return torrent_hash, torrent_name
+
+    async def stop(self, hash_or_prefix: str) -> tuple[str, str]:
+        torrent_hash, torrent_name = await self.resolve_hash(hash_or_prefix)
+        await self.client.stop_torrent(torrent_hash)
+        return torrent_hash, torrent_name
+
     async def close(self) -> None:
         self._previews.clear()
         await self.client.close()
@@ -346,6 +434,41 @@ def format_size(value: Any) -> str:
             break
         size /= 1024
     return f"{size:.0f} {unit}" if unit == "B" else f"{size:.2f} {unit}"
+
+
+def format_ratio(value: Any) -> str:
+    try:
+        ratio = float(value)
+    except (TypeError, ValueError):
+        return "未知"
+    if not math.isfinite(ratio):
+        return "未知"
+    if ratio < 0:
+        return "无限"
+    return f"{ratio:.2f}"
+
+
+def format_ratio_limit(torrent: dict[str, Any]) -> str:
+    try:
+        ratio_limit = float(torrent.get("ratio_limit", -2))
+    except (TypeError, ValueError):
+        return "未知"
+    if ratio_limit == -2:
+        effective = torrent.get("max_ratio")
+        return (
+            "默认" if effective is None else f"默认（有效 {format_ratio(effective)}）"
+        )
+    if ratio_limit < 0:
+        return "无限"
+    return format_ratio(ratio_limit)
+
+
+def format_upload_limit(value: Any) -> str:
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        return "未知"
+    return "默认" if limit <= 0 else f"{limit / 1024:g} KiB/s"
 
 
 def format_preview(preview: Preview) -> str:
@@ -377,6 +500,9 @@ def format_search_results(torrents: list[dict[str, Any]]) -> str:
                 f"{index}. {torrent.get('name', '未命名')}",
                 f"   状态: {torrent.get('state', 'unknown')} | 进度: {progress:.1f}% | "
                 f"下载: {format_size(torrent.get('dlspeed', 0))}/s | 上传: {format_size(torrent.get('upspeed', 0))}/s",
+                f"   当前分享率: {format_ratio(torrent.get('ratio'))} | "
+                f"分享率设置: {format_ratio_limit(torrent)} | "
+                f"上传限速: {format_upload_limit(torrent.get('up_limit'))}",
                 f"   分类: {category} | 标签: {tags}",
                 f"   Hash: {torrent.get('hash', '')}",
             )

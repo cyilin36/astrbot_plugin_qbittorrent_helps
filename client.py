@@ -239,6 +239,45 @@ class QBittorrentClient:
             data={"hashes": torrent_hash, "tags": ",".join(tags)},
         )
 
+    async def set_share_limits(
+        self,
+        torrent_hash: str,
+        ratio_limit: float,
+        seeding_time_limit: int,
+        inactive_seeding_time_limit: int,
+        share_limit_action: str,
+        share_limits_mode: str,
+    ) -> None:
+        await self.prepare()
+        await self.request(
+            "POST",
+            "torrents/setShareLimits",
+            data={
+                "hashes": torrent_hash,
+                "ratioLimit": str(ratio_limit),
+                "seedingTimeLimit": str(seeding_time_limit),
+                "inactiveSeedingTimeLimit": str(inactive_seeding_time_limit),
+                "shareLimitAction": share_limit_action,
+                "shareLimitsMode": share_limits_mode,
+            },
+        )
+
+    async def set_upload_limit(self, torrent_hash: str, limit: int) -> None:
+        await self.prepare()
+        await self.request(
+            "POST",
+            "torrents/setUploadLimit",
+            data={"hashes": torrent_hash, "limit": str(limit)},
+        )
+
+    async def start_torrent(self, torrent_hash: str) -> None:
+        await self.prepare()
+        await self.request("POST", "torrents/start", data={"hashes": torrent_hash})
+
+    async def stop_torrent(self, torrent_hash: str) -> None:
+        await self.prepare()
+        await self.request("POST", "torrents/stop", data={"hashes": torrent_hash})
+
     async def close(self) -> None:
         if (
             self._session is not None

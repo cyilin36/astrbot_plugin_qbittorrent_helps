@@ -173,5 +173,76 @@ class QBittorrentPlugin(Star):
         except Exception as exc:
             yield await self._command_error(event, "tags", exc)
 
+    @qbt.command("ratio")
+    async def qbt_ratio(
+        self, event: AstrMessageEvent, torrent_hash: str, ratio_limit: str
+    ):
+        """设置任务分享率，或恢复默认/无限。"""
+        try:
+            self._identity(event)
+            (
+                resolved_hash,
+                torrent_name,
+                normalized_ratio,
+            ) = await self.service.set_ratio(torrent_hash, ratio_limit)
+            if normalized_ratio == -2:
+                display_ratio = "默认"
+            elif normalized_ratio == -1:
+                display_ratio = "无限"
+            else:
+                display_ratio = f"{normalized_ratio:.2f}"
+            yield event.plain_result(
+                f"已设置任务分享率：{torrent_name} → {display_ratio}\nHash: {resolved_hash}"
+            )
+        except Exception as exc:
+            yield await self._command_error(event, "ratio", exc)
+
+    @qbt.command("upload")
+    async def qbt_upload(
+        self, event: AstrMessageEvent, torrent_hash: str, limit_kib: str
+    ):
+        """设置任务上传限速，单位为 KiB/s。"""
+        try:
+            self._identity(event)
+            (
+                resolved_hash,
+                torrent_name,
+                normalized_limit,
+            ) = await self.service.set_upload_limit(torrent_hash, limit_kib)
+            display_limit = (
+                "默认（受全局限速约束）"
+                if normalized_limit == 0
+                else f"{normalized_limit} KiB/s"
+            )
+            yield event.plain_result(
+                f"已设置任务上传限速：{torrent_name} → {display_limit}\nHash: {resolved_hash}"
+            )
+        except Exception as exc:
+            yield await self._command_error(event, "upload", exc)
+
+    @qbt.command("start")
+    async def qbt_start(self, event: AstrMessageEvent, torrent_hash: str):
+        """启动 qBittorrent 任务。"""
+        try:
+            self._identity(event)
+            resolved_hash, torrent_name = await self.service.start(torrent_hash)
+            yield event.plain_result(
+                f"已启动任务：{torrent_name}\nHash: {resolved_hash}"
+            )
+        except Exception as exc:
+            yield await self._command_error(event, "start", exc)
+
+    @qbt.command("stop")
+    async def qbt_stop(self, event: AstrMessageEvent, torrent_hash: str):
+        """停止 qBittorrent 任务。"""
+        try:
+            self._identity(event)
+            resolved_hash, torrent_name = await self.service.stop(torrent_hash)
+            yield event.plain_result(
+                f"已停止任务：{torrent_name}\nHash: {resolved_hash}"
+            )
+        except Exception as exc:
+            yield await self._command_error(event, "stop", exc)
+
     async def terminate(self):
         await self.service.close()
