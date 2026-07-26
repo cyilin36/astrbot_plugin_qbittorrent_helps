@@ -22,11 +22,13 @@
 插件不会把密码写入消息或日志。
 
 搜索结果按添加时间倒序排列，最新添加到 qBittorrent 的条目优先显示。
+搜索结果保持精简，只显示名称、状态、进度、当前速度和完整 hash；分享率、限速、分类、标签等信息可通过 `info` 查看。
 
 ## 指令
 
 ```text
 /qbt search [关键词] [数量]
+/qbt info <hash 或唯一 hash 前缀>
 /qbt preview <磁力链>
 /qbt add <磁力链或预览令牌> [文件选择]
 /qbt delete <hash 或唯一 hash 前缀> [确认]
@@ -61,11 +63,13 @@
 
 分享率和上传限速只在明确执行对应指令时修改，添加、重命名、分类、标签和启停操作不会改变这些设置。分享率支持非负数字；`默认`表示继续使用 qBittorrent 的分类或全局分享率，`无限`表示明确取消分享率限制。达到分享率后的动作仍由 qBittorrent 已有设置决定。
 
-上传限速使用 KiB/s 整数，例如 `/qbt upload abcd1234 512`。使用 `0`、`默认`或`无限`会取消任务专属限速，但任务仍受 qBittorrent 全局上传限速约束。`start` 和 `stop` 可启动或停止单个任务。搜索结果会显示当前分享率、分享率设置和任务上传限速。
+上传限速使用 KiB/s 整数，例如 `/qbt upload abcd1234 512`。使用 `0`、`默认`或`无限`会取消任务专属限速，但任务仍受 qBittorrent 全局上传限速约束。`start` 和 `stop` 可启动或停止单个任务。
+
+`/qbt info abcd1234` 可查看单个任务的完整状态，包括大小、传输量、当前速度、ETA、连接数、分享率、限速、分类、标签、保存路径和 Tracker 摘要。详情为只读操作，不会修改任务。
 
 ## AI tool
 
-AI 使用统一的 `qbittorrent` tool，通过 `action` 选择：`search`、`preview`、`add`、`delete`、`rename`、`set_category`、`set_tags`、`set_ratio`、`set_upload_limit`、`start` 或 `stop`。预览后，模型应使用返回的 `preview_token` 和 1-based `file_indexes` 调用 `add`。
+AI 使用统一的 `qbittorrent` tool，通过 `action` 选择：`search`、`info`、`preview`、`add`、`delete`、`rename`、`set_category`、`set_tags`、`set_ratio`、`set_upload_limit`、`start` 或 `stop`。`info` 使用 `torrent_hash` 获取只读任务详情；预览后，模型应使用返回的 `preview_token` 和 1-based `file_indexes` 调用 `add`。
 
 任务管理操作使用 `torrent_hash`。`set_ratio` 使用 `ratio_limit`，其中 `-2` 表示默认、`-1` 表示无限；`set_upload_limit` 使用非负整数 `upload_limit_kib`，其中 `0` 表示取消任务专属限速并继续使用全局设置。没有明确执行这两个 action 时，tool 不会改变任务的分享率或上传限速。
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 import re
 import secrets
@@ -41,6 +42,13 @@ class Preview:
     torrent_hash: str
     files: list[PreviewFile]
     expires_at: float
+
+
+@dataclass(slots=True)
+class TorrentDetails:
+    torrent: dict[str, Any]
+    properties: dict[str, Any]
+    trackers: list[dict[str, Any]]
 
 
 class QBittorrentService:
@@ -268,6 +276,19 @@ class QBittorrentService:
         torrent = await self.resolve_torrent(hash_or_prefix)
         return str(torrent.get("hash", "")), str(torrent.get("name", "未命名"))
 
+    async def info(self, hash_or_prefix: str) -> TorrentDetails:
+        torrent = await self.resolve_torrent(hash_or_prefix)
+        torrent_hash = str(torrent.get("hash", ""))
+        properties, trackers = await asyncio.gather(
+            self.client.get_torrent_properties(torrent_hash),
+            self.client.list_torrent_trackers(torrent_hash),
+        )
+        return TorrentDetails(
+            torrent=torrent,
+            properties=properties,
+            trackers=trackers,
+        )
+
     async def delete(
         self, hash_or_prefix: str, *, confirmed: bool = False
     ) -> tuple[str, str]:
@@ -449,8 +470,10 @@ def format_ratio(value: Any) -> str:
 
 
 def format_ratio_limit(torrent: dict[str, Any]) -> str:
+    if "ratio_limit" not in torrent:
+        return "未知"
     try:
-        ratio_limit = float(torrent.get("ratio_limit", -2))
+        ratio_limit = float(torrent["ratio_limit"])
     except (TypeError, ValueError):
         return "未知"
     if ratio_limit == -2:
@@ -471,6 +494,100 @@ def format_upload_limit(value: Any) -> str:
     return "默认" if limit <= 0 else f"{limit / 1024:g} KiB/s"
 
 
+def format_optional_size(value: Any) -> str:
+    if value is None:
+        return "未知"
+    try:
+        size = float(value)
+    except (TypeError, ValueError):
+        return "未知"
+    if not math.isfinite(size) or size < 0:
+        return "未知"
+    return format_size(size)
+
+
+def format_duration(value: Any, *, eta: bool = False) -> str:
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return "未知"
+    if seconds < 0 or (eta and seconds >= 8_640_000):
+        return "未知"
+    days, seconds = divmod(seconds, 86_400)
+    hours, seconds = divmod(seconds, 3_600)
+    minutes, seconds = divmod(seconds, 60)
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}天")
+    if hours:
+        parts.append(f"{hours}小时")
+    if minutes:
+        parts.append(f"{minutes}分钟")
+    if seconds or not parts:
+        parts.append(f"{seconds}秒")
+    return "".join(parts)
+
+
+def format_progress(value: Any) -> str:
+    try:
+        progress = float(value)
+    except (TypeError, ValueError):
+        return "未知"
+    if not math.isfinite(progress):
+        return "未知"
+    return f"{max(0.0, min(1.0, progress)) * 100:.1f}%"
+
+
+def _tracker_status(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_pseudo_tracker(tracker: dict[str, Any]) -> bool:
+    name = str(tracker.get("url") or tracker.get("name") or "").casefold()
+    return any(marker in name for marker in ("[dht]", "[pex]", "[lsd]"))
+
+
+def format_tracker_summary(trackers: list[dict[str, Any]]) -> list[str]:
+    visible = [
+        tracker
+        for tracker in trackers
+        if not (_is_pseudo_tracker(tracker) and _tracker_status(tracker.get("status")) == 0)
+    ]
+    if not visible:
+        return ["Tracker: 无"]
+
+    counts = {"正常": 0, "未连接": 0, "错误": 0, "不可达": 0}
+    failures: list[tuple[str, str]] = []
+    failure_labels = {4: "不可用", 5: "错误", 6: "不可达"}
+    for tracker in visible:
+        status = _tracker_status(tracker.get("status"))
+        if status == 2:
+            counts["正常"] += 1
+        elif status == 1:
+            counts["未连接"] += 1
+        elif status in {4, 5}:
+            counts["错误"] += 1
+        elif status == 6:
+            counts["不可达"] += 1
+        if status in failure_labels:
+            name = str(tracker.get("url") or tracker.get("name") or "未知 Tracker")
+            message = str(tracker.get("msg") or failure_labels[status]).strip()
+            failures.append((name, message))
+
+    lines = [
+        "Tracker: "
+        + " | ".join(f"{label} {count}" for label, count in counts.items())
+    ]
+    for name, message in failures[:3]:
+        lines.append(f"  异常: {name} — {message}")
+    if len(failures) > 3:
+        lines.append(f"  另有 {len(failures) - 3} 个异常 Tracker")
+    return lines
+
+
 def format_preview(preview: Preview) -> str:
     lines = [
         f"名称: {preview.name}",
@@ -487,23 +604,57 @@ def format_preview(preview: Preview) -> str:
     return "\n".join(lines)
 
 
+def format_torrent_details(details: TorrentDetails) -> str:
+    torrent = details.torrent
+    properties = details.properties
+
+    def first(*keys: str, source: dict[str, Any] = properties) -> Any:
+        for key in keys:
+            if key in source and source[key] is not None:
+                return source[key]
+        return None
+
+    name = str(first("name") or torrent.get("name") or "未命名")
+    torrent_hash = str(torrent.get("hash") or first("hash") or "未知")
+    state = str(torrent.get("state") or "未知")
+    category = str(torrent.get("category") or "").strip() or "未分类"
+    tags = str(torrent.get("tags") or "").strip() or "无"
+    remaining = first("amount_left", source=torrent)
+    seeds = first("seeds")
+    seeds_total = first("seeds_total")
+    peers = first("peers")
+    peers_total = first("peers_total")
+
+    lines = [
+        f"名称: {name}",
+        f"Hash: {torrent_hash}",
+        f"状态: {state} | 进度: {format_progress(first('progress'))} | ETA: {format_duration(first('eta'), eta=True)}",
+        f"大小: {format_optional_size(first('total_size'))} | 剩余: {format_optional_size(remaining)}",
+        f"已下载: {format_optional_size(first('total_downloaded'))} | 已上传: {format_optional_size(first('total_uploaded'))}",
+        f"当前速度: 下载 {format_optional_size(first('dl_speed'))}/s | 上传 {format_optional_size(first('up_speed'))}/s",
+        f"限速: 下载 {format_upload_limit(first('dl_limit'))} | 上传 {format_upload_limit(first('up_limit'))}",
+        f"分享率: {format_ratio(first('share_ratio'))} | 设置: {format_ratio_limit(torrent)}",
+        f"活动时间: {format_duration(first('time_elapsed'))} | 做种时间: {format_duration(first('seeding_time'))}",
+        f"连接: {first('nb_connections') if first('nb_connections') is not None else '未知'} | "
+        f"种子 {seeds if seeds is not None else '未知'}/{seeds_total if seeds_total is not None else '未知'} | "
+        f"用户 {peers if peers is not None else '未知'}/{peers_total if peers_total is not None else '未知'}",
+        f"分类: {category} | 标签: {tags}",
+        f"保存路径: {first('save_path') or '未知'}",
+    ]
+    lines.extend(format_tracker_summary(details.trackers))
+    return "\n".join(lines)
+
+
 def format_search_results(torrents: list[dict[str, Any]]) -> str:
     if not torrents:
         return "未找到匹配的 qBittorrent 条目。"
     lines = [f"找到 {len(torrents)} 个条目:"]
     for index, torrent in enumerate(torrents, start=1):
-        progress = max(0.0, min(1.0, float(torrent.get("progress", 0)))) * 100
-        category = str(torrent.get("category", "")).strip() or "未分类"
-        tags = str(torrent.get("tags", "")).strip() or "无"
         lines.extend(
             (
                 f"{index}. {torrent.get('name', '未命名')}",
-                f"   状态: {torrent.get('state', 'unknown')} | 进度: {progress:.1f}% | "
+                f"   状态: {torrent.get('state', 'unknown')} | 进度: {format_progress(torrent.get('progress'))} | "
                 f"下载: {format_size(torrent.get('dlspeed', 0))}/s | 上传: {format_size(torrent.get('upspeed', 0))}/s",
-                f"   当前分享率: {format_ratio(torrent.get('ratio'))} | "
-                f"分享率设置: {format_ratio_limit(torrent)} | "
-                f"上传限速: {format_upload_limit(torrent.get('up_limit'))}",
-                f"   分类: {category} | 标签: {tags}",
                 f"   Hash: {torrent.get('hash', '')}",
             )
         )

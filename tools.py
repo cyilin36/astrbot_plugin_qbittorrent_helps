@@ -15,10 +15,10 @@ from astrbot.core.astr_agent_context import AstrAgentContext
 
 try:
     from .client import QBittorrentError
-    from .service import format_preview, format_search_results
+    from .service import format_preview, format_search_results, format_torrent_details
 except ImportError:  # See the loading compatibility note in main.py.
     from client import QBittorrentError
-    from service import format_preview, format_search_results
+    from service import format_preview, format_search_results, format_torrent_details
 
 
 def _format_add_result(result: dict[str, Any] | str) -> str:
@@ -43,7 +43,7 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
     service: Any = Field(default=None, exclude=True)
     name: str = "qbittorrent"
     description: str = (
-        "管理 qBittorrent：搜索、预览、添加、重命名、分类、标签、分享率、"
+        "管理 qBittorrent：搜索、详情、预览、添加、重命名、分类、标签、分享率、"
         "上传限速、启停或删除下载条目。"
         "预览后用 preview_token 和 1-based file_indexes 选择文件。"
     )
@@ -55,6 +55,7 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                     "type": "string",
                     "enum": [
                         "search",
+                        "info",
                         "preview",
                         "add",
                         "delete",
@@ -134,6 +135,13 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                     str(kwargs.get("query", "")), None if limit is None else int(limit)
                 )
                 return format_search_results(torrents)
+
+            if action == "info":
+                torrent_hash = str(kwargs.get("torrent_hash", "")).strip()
+                if not torrent_hash:
+                    raise QBittorrentError("info 操作必须提供 torrent_hash")
+                details = await self.service.info(torrent_hash)
+                return format_torrent_details(details)
 
             if action == "preview":
                 magnet = str(kwargs.get("magnet", "")).strip()
@@ -303,7 +311,7 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                 )
 
             raise QBittorrentError(
-                "action 必须是 search、preview、add、delete、rename、set_category、"
+                "action 必须是 search、info、preview、add、delete、rename、set_category、"
                 "set_tags、set_ratio、set_upload_limit、start 或 stop"
             )
         except QBittorrentError as exc:

@@ -11,11 +11,21 @@ from astrbot.core.star.filter.command import GreedyStr
 
 try:
     from .client import QBittorrentClient, QBittorrentError
-    from .service import QBittorrentService, format_preview, format_search_results
+    from .service import (
+        QBittorrentService,
+        format_preview,
+        format_search_results,
+        format_torrent_details,
+    )
     from .tools import QBittorrentTool
 except ImportError:  # AstrBot installations may load a plugin's main.py directly.
     from client import QBittorrentClient, QBittorrentError
-    from service import QBittorrentService, format_preview, format_search_results
+    from service import (
+        QBittorrentService,
+        format_preview,
+        format_search_results,
+        format_torrent_details,
+    )
     from tools import QBittorrentTool
 
 
@@ -78,6 +88,16 @@ class QBittorrentPlugin(Star):
             yield event.plain_result(format_search_results(torrents))
         except Exception as exc:
             yield await self._command_error(event, "search", exc)
+
+    @qbt.command("info")
+    async def qbt_info(self, event: AstrMessageEvent, torrent_hash: str):
+        """查看 qBittorrent 单个任务详情。"""
+        try:
+            self._identity(event)
+            details = await self.service.info(torrent_hash)
+            yield event.plain_result(format_torrent_details(details))
+        except Exception as exc:
+            yield await self._command_error(event, "info", exc)
 
     @qbt.command("preview")
     async def qbt_preview(self, event: AstrMessageEvent, magnet: str):

@@ -160,6 +160,26 @@ class QBittorrentClient:
             raise QBittorrentError("qBittorrent 返回的条目列表格式无效")
         return [item for item in payload if isinstance(item, dict)]
 
+    async def get_torrent_properties(self, torrent_hash: str) -> dict[str, Any]:
+        await self.prepare()
+        _, payload = await self.request(
+            "GET", "torrents/properties", params={"hash": torrent_hash}
+        )
+        if not isinstance(payload, dict):
+            raise QBittorrentError("qBittorrent 返回的任务详情格式无效")
+        return payload
+
+    async def list_torrent_trackers(
+        self, torrent_hash: str
+    ) -> list[dict[str, Any]]:
+        await self.prepare()
+        _, payload = await self.request(
+            "GET", "torrents/trackers", params={"hash": torrent_hash}
+        )
+        if not isinstance(payload, list):
+            raise QBittorrentError("qBittorrent 返回的 Tracker 列表格式无效")
+        return [item for item in payload if isinstance(item, dict)]
+
     async def fetch_metadata(
         self,
         source: str,
