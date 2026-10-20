@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 try:
-    from .client import QBittorrentClient, QBittorrentError
+    from .client import QBittorrentClient, QBittorrentError, QBittorrentHTTPError
 except ImportError:  # Allow direct loading in lightweight test runners.
-    from client import QBittorrentClient, QBittorrentError
+    from client import QBittorrentClient, QBittorrentError, QBittorrentHTTPError
 
 
 class AuthorizationError(QBittorrentError):
@@ -45,10 +45,29 @@ class Preview:
 
 
 @dataclass(slots=True)
+class TorrentItem:
+    index: int
+    path: str
+    size: int
+    is_folder: bool
+
+
+@dataclass(slots=True)
+class RenamedEntry:
+    torrent_hash: str
+    torrent_name: str
+    index: int
+    old_path: str
+    new_path: str
+    is_folder: bool
+
+
+@dataclass(slots=True)
 class TorrentDetails:
     torrent: dict[str, Any]
     properties: dict[str, Any]
     trackers: list[dict[str, Any]]
+    items: list[TorrentItem] | None = None
 
 
 class QBittorrentService:
@@ -276,18 +295,138 @@ class QBittorrentService:
         torrent = await self.resolve_torrent(hash_or_prefix)
         return str(torrent.get("hash", "")), str(torrent.get("name", "未命名"))
 
-    async def info(self, hash_or_prefix: str) -> TorrentDetails:
+    async def info(
+        self, hash_or_prefix: str, *, include_items: bool = False
+    ) -> TorrentDetails:
         torrent = await self.resolve_torrent(hash_or_prefix)
         torrent_hash = str(torrent.get("hash", ""))
-        properties, trackers = await asyncio.gather(
-            self.client.get_torrent_properties(torrent_hash),
-            self.client.list_torrent_trackers(torrent_hash),
-        )
+        if include_items:
+            properties, trackers, raw_files = await asyncio.gather(
+                self.client.get_torrent_properties(torrent_hash),
+                self.client.list_torrent_trackers(torrent_hash),
+                self.client.list_torrent_files(torrent_hash),
+            )
+            items = self._build_items(raw_files)
+        else:
+            properties, trackers = await asyncio.gather(
+                self.client.get_torrent_properties(torrent_hash),
+                self.client.list_torrent_trackers(torrent_hash),
+            )
+            items = None
         return TorrentDetails(
             torrent=torrent,
             properties=properties,
             trackers=trackers,
+            items=items,
         )
+
+    @staticmethod
+    def _build_items(raw_files: list[dict[str, Any]]) -> list[TorrentItem]:
+        folder_paths: set[str] = set()
+        file_items: list[TorrentItem] = []
+        for raw_file in raw_files:
+            path = str(raw_file.get("name") or "")
+            if not path:
+                raise QBittorrentError("qBittorrent 返回的文件列表缺少路径")
+            parts = path.split("/")
+            for depth in range(1, len(parts)):
+                folder_path = "/".join(parts[:depth])
+                if folder_path:
+                    folder_paths.add(folder_path)
+            try:
+                size = max(0, int(raw_file.get("size", 0)))
+            except (TypeError, ValueError):
+                size = 0
+            file_items.append(
+                TorrentItem(index=0, path=path, size=size, is_folder=False)
+            )
+
+        items = [
+            TorrentItem(index=0, path=folder_path, size=0, is_folder=True)
+            for folder_path in sorted(
+                folder_paths, key=lambda value: (value.casefold(), value)
+            )
+        ]
+        items.extend(file_items)
+        for position, item in enumerate(items, start=1):
+            item.index = position
+        return items
+
+    async def rename_item(
+        self, hash_or_prefix: str, item_index: Any, new_name: str
+    ) -> RenamedEntry:
+        normalized_name = self._normalize_new_name(new_name)
+        torrent_hash, torrent_name = await self.resolve_hash(hash_or_prefix)
+        raw_files = await self.client.list_torrent_files(torrent_hash)
+        items = self._build_items(raw_files)
+        if not items:
+            raise QBittorrentError("该任务没有可重命名的文件或文件夹")
+        if isinstance(item_index, bool):
+            raise QBittorrentError("条目编号必须是整数")
+        try:
+            normalized_index = int(item_index)
+        except (TypeError, ValueError) as exc:
+            raise QBittorrentError("条目编号必须是整数") from exc
+        if not 1 <= normalized_index <= len(items):
+            raise QBittorrentError(f"条目编号超出范围，有效范围 1-{len(items)}")
+
+        item = items[normalized_index - 1]
+        new_path = self._renamed_path(item.path, normalized_name)
+        if new_path == item.path:
+            raise QBittorrentError("新名称与原名相同")
+        try:
+            if item.is_folder:
+                await self.client.rename_torrent_folder(
+                    torrent_hash, item.path, new_path
+                )
+            else:
+                await self.client.rename_torrent_file(
+                    torrent_hash, item.path, new_path
+                )
+        except QBittorrentHTTPError as exc:
+            message = self._rename_error_message(exc)
+            if message is None:
+                raise
+            raise QBittorrentError(message) from exc
+        return RenamedEntry(
+            torrent_hash=torrent_hash,
+            torrent_name=torrent_name,
+            index=normalized_index,
+            old_path=item.path,
+            new_path=new_path,
+            is_folder=item.is_folder,
+        )
+
+    @staticmethod
+    def _normalize_new_name(value: Any) -> str:
+        name = str(value or "").strip()
+        if not name:
+            raise QBittorrentError("新名称不能为空")
+        if name in {".", ".."}:
+            raise QBittorrentError("新名称不能是 . 或 ..")
+        if "/" in name or "\\" in name:
+            raise QBittorrentError("新名称不能包含路径分隔符，只能修改名称本身")
+        if any(ord(char) < 32 or ord(char) == 127 for char in name):
+            raise QBittorrentError("新名称不能包含控制字符")
+        return name
+
+    @staticmethod
+    def _renamed_path(old_path: str, new_name: str) -> str:
+        parent, separator, _ = old_path.rpartition("/")
+        return f"{parent}/{new_name}" if separator else new_name
+
+    @staticmethod
+    def _rename_error_message(exc: QBittorrentHTTPError) -> str | None:
+        if exc.status == 409:
+            detail = str(exc.message).strip()
+            if detail and detail != "未知错误":
+                return f"重命名失败：{detail}"
+            return "重命名失败：目标名称无效或已存在同名文件/文件夹"
+        if exc.status == 404:
+            return "重命名失败：任务或目标路径不存在，请重新执行 info files 查看"
+        if exc.status == 400:
+            return "重命名失败：qBittorrent 拒绝了该新名称"
+        return None
 
     async def delete(
         self, hash_or_prefix: str, *, confirmed: bool = False
@@ -604,6 +743,20 @@ def format_preview(preview: Preview) -> str:
     return "\n".join(lines)
 
 
+def format_torrent_items(items: list[TorrentItem]) -> list[str]:
+    if not items:
+        return ["内容: 无"]
+    lines = [f"内容 ({len(items)}):"]
+    for item in items:
+        if item.is_folder:
+            lines.append(f"{item.index}. [文件夹] {item.path}/")
+        else:
+            lines.append(
+                f"{item.index}. [文件] {item.path} ({format_size(item.size)})"
+            )
+    return lines
+
+
 def format_torrent_details(details: TorrentDetails) -> str:
     torrent = details.torrent
     properties = details.properties
@@ -642,6 +795,13 @@ def format_torrent_details(details: TorrentDetails) -> str:
         f"保存路径: {first('save_path') or '未知'}",
     ]
     lines.extend(format_tracker_summary(details.trackers))
+    if details.items is not None:
+        lines.append("")
+        lines.extend(format_torrent_items(details.items))
+        if details.items:
+            lines.append(
+                f"重命名: /qbt renameitem {torrent_hash} <条目编号> <新名称>"
+            )
     return "\n".join(lines)
 
 

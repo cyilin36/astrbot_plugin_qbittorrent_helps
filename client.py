@@ -180,6 +180,15 @@ class QBittorrentClient:
             raise QBittorrentError("qBittorrent 返回的 Tracker 列表格式无效")
         return [item for item in payload if isinstance(item, dict)]
 
+    async def list_torrent_files(self, torrent_hash: str) -> list[dict[str, Any]]:
+        await self.prepare()
+        _, payload = await self.request(
+            "GET", "torrents/files", params={"hash": torrent_hash}
+        )
+        if not isinstance(payload, list):
+            raise QBittorrentError("qBittorrent 返回的文件列表格式无效")
+        return [item for item in payload if isinstance(item, dict)]
+
     async def fetch_metadata(
         self,
         source: str,
@@ -234,6 +243,34 @@ class QBittorrentClient:
             "POST",
             "torrents/rename",
             data={"hash": torrent_hash, "name": name},
+        )
+
+    async def rename_torrent_file(
+        self, torrent_hash: str, old_path: str, new_path: str
+    ) -> None:
+        await self.prepare()
+        await self.request(
+            "POST",
+            "torrents/renameFile",
+            data={
+                "hash": torrent_hash,
+                "oldPath": old_path,
+                "newPath": new_path,
+            },
+        )
+
+    async def rename_torrent_folder(
+        self, torrent_hash: str, old_path: str, new_path: str
+    ) -> None:
+        await self.prepare()
+        await self.request(
+            "POST",
+            "torrents/renameFolder",
+            data={
+                "hash": torrent_hash,
+                "oldPath": old_path,
+                "newPath": new_path,
+            },
         )
 
     async def list_categories(self) -> list[str]:

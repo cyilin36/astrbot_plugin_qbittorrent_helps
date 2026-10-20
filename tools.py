@@ -43,7 +43,8 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
     service: Any = Field(default=None, exclude=True)
     name: str = "qbittorrent"
     description: str = (
-        "管理 qBittorrent：搜索、详情、预览、添加、重命名、分类、标签、分享率、"
+        "管理 qBittorrent：搜索、详情（可含文件和文件夹编号）、预览、添加、"
+        "任务重命名、任务内文件和文件夹重命名、分类、标签、分享率、"
         "上传限速、启停或删除下载条目。"
         "预览后用 preview_token 和 1-based file_indexes 选择文件。"
     )
@@ -79,9 +80,24 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                     "type": "string",
                     "description": "任务操作目标的完整 hash 或唯一 hash 前缀。",
                 },
+                "include_files": {
+                    "type": "boolean",
+                    "description": "info 操作是否附带任务内的文件和文件夹编号清单。",
+                },
                 "new_name": {
                     "type": "string",
-                    "description": "rename 操作要设置的新任务显示名称。",
+                    "description": (
+                        "rename 操作要设置的新名称；提供 item_index 时表示"
+                        "文件或文件夹名称，否则表示任务显示名称。"
+                    ),
+                },
+                "item_index": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": (
+                        "rename 操作要重命名的文件或文件夹编号；"
+                        "省略时重命名任务显示名称。"
+                    ),
                 },
                 "category": {
                     "type": "string",
@@ -140,7 +156,10 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                 torrent_hash = str(kwargs.get("torrent_hash", "")).strip()
                 if not torrent_hash:
                     raise QBittorrentError("info 操作必须提供 torrent_hash")
-                details = await self.service.info(torrent_hash)
+                details = await self.service.info(
+                    torrent_hash,
+                    include_items=bool(kwargs.get("include_files", False)),
+                )
                 return format_torrent_details(details)
 
             if action == "preview":
@@ -188,6 +207,23 @@ class QBittorrentTool(FunctionTool[AstrAgentContext]):
                     raise QBittorrentError("rename 操作必须提供 torrent_hash")
                 if not new_name:
                     raise QBittorrentError("rename 操作必须提供 new_name")
+                item_index = kwargs.get("item_index")
+                if item_index is not None:
+                    renamed_item = await self.service.rename_item(
+                        torrent_hash, item_index, new_name
+                    )
+                    return json.dumps(
+                        {
+                            "success": True,
+                            "kind": "folder" if renamed_item.is_folder else "file",
+                            "name": renamed_item.torrent_name,
+                            "index": renamed_item.index,
+                            "old_path": renamed_item.old_path,
+                            "new_path": renamed_item.new_path,
+                            "torrent_hash": renamed_item.torrent_hash,
+                        },
+                        ensure_ascii=False,
+                    )
                 resolved_hash, old_name, normalized_name = await self.service.rename(
                     torrent_hash, new_name
                 )

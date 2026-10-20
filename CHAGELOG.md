@@ -1,3 +1,14 @@
+## 0.7.0 - 2026-10-20
+
+### 新增
+
+- 新增 `/qbt info <hash> files`，在任务详情后显示文件和文件夹清单及统一编号。
+- 新增 `/qbt renameitem <hash> <编号> <新名称>`，重命名任务内文件或文件夹，名称支持空格。
+
+### 调整
+
+- `qbittorrent` AI tool 不新增 action：`info` 支持 `include_files`，`rename` 支持 `item_index`。
+
 ## 0.6.0 - 2026-07-26
 
 ### 新增

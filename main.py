@@ -90,11 +90,18 @@ class QBittorrentPlugin(Star):
             yield await self._command_error(event, "search", exc)
 
     @qbt.command("info")
-    async def qbt_info(self, event: AstrMessageEvent, torrent_hash: str):
-        """查看 qBittorrent 单个任务详情。"""
+    async def qbt_info(
+        self, event: AstrMessageEvent, torrent_hash: str, section: str = ""
+    ):
+        """查看 qBittorrent 任务详情，或附加文件和文件夹清单。"""
         try:
             self._identity(event)
-            details = await self.service.info(torrent_hash)
+            normalized_section = section.strip().lower()
+            if normalized_section not in {"", "files"}:
+                raise QBittorrentError("info 的第二个参数只支持 files")
+            details = await self.service.info(
+                torrent_hash, include_items=normalized_section == "files"
+            )
             yield event.plain_result(format_torrent_details(details))
         except Exception as exc:
             yield await self._command_error(event, "info", exc)
@@ -156,6 +163,28 @@ class QBittorrentPlugin(Star):
             )
         except Exception as exc:
             yield await self._command_error(event, "rename", exc)
+
+    @qbt.command("renameitem")
+    async def qbt_rename_item(
+        self,
+        event: AstrMessageEvent,
+        torrent_hash: str,
+        item_index: int,
+        new_name: GreedyStr,
+    ):
+        """按编号重命名任务内的文件或文件夹。"""
+        try:
+            self._identity(event)
+            result = await self.service.rename_item(
+                torrent_hash, item_index, new_name
+            )
+            kind = "文件夹" if result.is_folder else "文件"
+            yield event.plain_result(
+                f"已重命名{kind}：{result.old_path} → {result.new_path}\n"
+                f"任务: {result.torrent_name}\nHash: {result.torrent_hash}"
+            )
+        except Exception as exc:
+            yield await self._command_error(event, "renameitem", exc)
 
     @qbt.command("category")
     async def qbt_category(
